@@ -59,12 +59,11 @@ class JarvisApp:
 
         self.running = False
         self.thread = None
+        # Background listener threads write here; the Tkinter UI reads it safely on the main thread.
         self.log_queue = queue.Queue()
         self.root.after(100, self.process_logs)
 
-        # --- NEW: conversation state ---
-        # When True, Jarvis expects a follow-up answer without "Jarvis"
-        # followup_timeout = unix timestamp until which follow-up is allowed
+        # Tracks short follow-up conversations so the user does not need to repeat the wake word.
         self.conversation_mode = False
         self.followup_timeout = 0
 
@@ -75,6 +74,7 @@ class JarvisApp:
         self.log_queue.put(msg)
 
     def process_logs(self):
+        # Tkinter widgets should be updated from the main thread, so logs are drained here.
         while not self.log_queue.empty():
             line = self.log_queue.get_nowait()
             self.log_box.config(state=tk.NORMAL)
@@ -85,6 +85,7 @@ class JarvisApp:
 
     # ---------- TTS Worker (pyttsx3) ----------
     def tts_worker(self, text):
+        # pyttsx3 can block while speaking, so each response is spoken on a background thread.
         try:
             engine = pyttsx3.init()
             # Optional tweaks:
@@ -100,7 +101,6 @@ class JarvisApp:
     def speak(self, text):
         self.log(f"Jarvis: {text}")
 
-        # NEW: run pyttsx3 in its own thread so it works for every response
         threading.Thread(target=self.tts_worker, args=(text,), daemon=True).start()
 
         # ------------------------------------------------------------------
@@ -114,6 +114,7 @@ class JarvisApp:
 
             audio = sd.rec(int(seconds * fs), samplerate=fs, channels=1, dtype='int16')
             sd.wait()
+            # SpeechRecognition reads from a file, so the microphone sample is saved temporarily.
             write(TEMP_WAV, fs, audio)
             return TEMP_WAV
         except Exception as e:
@@ -143,6 +144,7 @@ class JarvisApp:
     # ---------- GPT ----------
     def ask_gpt(self, text):
         try:
+            # The prompt keeps GPT responses short enough for a desktop voice assistant.
             prompt = (
                 "You are Jarvis, a friendly desktop assistant. "
                 "Respond briefly and naturally.\n\nUser: " + text
@@ -160,6 +162,7 @@ class JarvisApp:
     def parse_timer_duration(self, cmd):
         text = cmd.lower()
 
+        # Supports both digit-based timers ("5 minutes") and short word-based timers ("five minutes").
         m = re.search(r'(\d+)\s*(second|seconds|minute|minutes|hour|hours)', text)
         amount = None
         unit = None
@@ -271,7 +274,7 @@ class JarvisApp:
         if reply:
             self.speak(reply)
 
-            # --- NEW: if GPT's reply is a question, expect a follow-up WITHOUT "Jarvis" ---
+            # If GPT asks a question, keep listening briefly for a natural follow-up answer.
             if reply.strip().endswith("?"):
                 self.conversation_mode = True
                 self.followup_timeout = time.time() + 12  # 20 seconds to answer
@@ -284,6 +287,7 @@ class JarvisApp:
     # ---------- Searching Extract ----------
     def extract_search_query(self, cmd, service_keywords):
         text = cmd.lower()
+        # Remove wake words and service names so only the user's actual search phrase remains.
         for wake in WAKE_WORDS:
             text = text.replace(wake, "")
 
@@ -315,7 +319,7 @@ class JarvisApp:
         self.speak("Jarvis online.")
 
         while self.running:
-            # --- Conversation mode: follow-up without wake word ---
+            # Conversation mode listens for a direct answer before returning to wake-word mode.
             if self.conversation_mode and time.time() < self.followup_timeout:
                 cmd = self.listen(seconds=5, show_log=True)
                 self.handle_command(cmd)
@@ -325,7 +329,7 @@ class JarvisApp:
                 # timeout or not expecting follow-up anymore
                 self.conversation_mode = False
 
-            # --- Normal wake-word mode ---
+            # Normal mode stays quiet until the wake word is detected.
             heard = self.listen(seconds=3, show_log=False)
             if not self.running:
                 break
