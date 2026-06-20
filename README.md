@@ -1,6 +1,6 @@
 # Voice Assistant
 
-A Python desktop voice assistant that listens for a wake word, records speech, recognizes commands, speaks responses, and uses the OpenAI API for conversational fallback responses.
+A Python desktop voice assistant that integrates better w/ the Windows OS, preferably, and listens for a wake word, records speech, recognizes commands, speaks responses, and uses the OpenAI API for conversational fallback responses.
 
 This project is one of my larger Python practice builds because it combines a user interface, audio recording, speech recognition, text-to-speech, web actions, timer commands, and API integration.
 
